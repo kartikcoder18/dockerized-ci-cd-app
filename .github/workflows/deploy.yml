@@ -1,0 +1,40 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to AWS ECR
+        run: |
+          echo "${{ secrets.AWS_ACCESS_KEY_ID }}" | docker login --username AWS --password-stdin 471112545023.dkr.ecr.ap-south-1.amazonaws.com
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t dockerized-ci-cd-app .
+          docker tag dockerized-ci-cd-app 471112545023.dkr.ecr.ap-south-1.amazonaws.com/dockerized-ci-cd-app:latest
+          docker push 471112545023.dkr.ecr.ap-south-1.amazonaws.com/dockerized-ci-cd-app:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH into EC2 and Deploy Container
+        uses: appleboy/ssh-action@v0.1.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 471112545023.dkr.ecr.ap-south-1.amazonaws.com
+            docker pull 471112545023.dkr.ecr.ap-south-1.amazonaws.com/dockerized-ci-cd-app:latest
+            docker stop my-container || true
+            docker rm my-container || true
+            docker run -d -p 3000:3000 --name my-container 471112545023.dkr.ecr.ap-south-1.amazonaws.com/dockerized-ci-cd-app:latest
